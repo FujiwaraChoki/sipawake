@@ -22,6 +22,7 @@ struct Options {
     var cutoff = 15
     var extras = true
     var dryRun = false
+    var menuSession: MenuSession?
 
     init(_ arguments: [String]) throws {
         var args = arguments[...]
@@ -40,12 +41,19 @@ struct Options {
                 cutoff = try percentage(args.popFirst(), for: flag)
             case "--no-extras":
                 extras = false
+            case "--menu-session":
+                guard let process = args.popFirst(), let pid = Int32(process), pid > 1,
+                      let token = args.popFirst(), let id = UUID(uuidString: token) else {
+                    throw CLIError("Invalid menu session.")
+                }
+                menuSession = MenuSession(pid: pid, id: id)
             case "--dry-run":
                 dryRun = true
             default:
                 throw CLIError("Unknown option \(flag). Run sipawake --help for usage.")
             }
         }
+        guard menuSession == nil || !dryRun else { throw CLIError("Invalid menu preview.") }
         guard seconds != nil else { throw CLIError("Provide a duration with --for, for example --for 45m.") }
         guard !seen.contains("--brightness") || !seen.contains("--no-dim") else {
             throw CLIError("Choose either --brightness or --no-dim.")
@@ -121,6 +129,7 @@ func runSession(_ options: Options, seconds: Int, power: MacPower, session: Sess
         status("Recovering settings from the previous session.")
         try requireRestored(session.restore(&changes))
     }
+    guard options.menuSession?.stopped != true else { throw CLIError("The menu session was cancelled.") }
     try ensureBattery(options, on: power)
     let planned = try plan(options, on: power)
     var failure: Error?
@@ -128,14 +137,15 @@ func runSession(_ options: Options, seconds: Int, power: MacPower, session: Sess
 
     do {
         for change in planned {
-            if signals.first != nil { break }
+            if signals.first != nil || options.menuSession?.stopped == true { break }
             try session.apply(change, changes: &changes)
         }
-        if signals.first == nil {
+        if signals.first == nil && options.menuSession?.stopped != true {
+            try options.menuSession?.publish(deadline: Date().addingTimeInterval(Double(seconds)))
             status("SipAwake active for \(seconds)s. You can close the lid. Press Ctrl-C to stop.")
             let clock = ContinuousClock()
             let deadline = clock.now.advanced(by: .seconds(seconds))
-            while signals.first == nil && clock.now < deadline {
+            while signals.first == nil && options.menuSession?.stopped != true && clock.now < deadline {
                 let battery = try Battery(output: power.pmset(["-g", "batt"]))
                 if battery.reached(options.cutoff) {
                     reason = "Battery reached the \(options.cutoff)% cutoff."
@@ -148,7 +158,10 @@ func runSession(_ options: Options, seconds: Int, power: MacPower, session: Sess
         failure = error
     }
 
-    if signals.first != nil { reason = "Session interrupted." }
+    options.menuSession?.clear()
+    if signals.first != nil || options.menuSession?.stopped == true {
+        reason = "Session interrupted."
+    }
     if failure == nil { status(reason) }
     let errors = session.restore(&changes)
     if let failure, !errors.isEmpty { note(failure.localizedDescription) }

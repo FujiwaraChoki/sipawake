@@ -120,6 +120,20 @@ final class SessionTests: XCTestCase {
         for number in [SIGINT, SIGTERM, SIGHUP, SIGQUIT] { signal(number, SIG_DFL) }
     }
 
+    func testClosingMenuPipeEndsSessionOwner() throws {
+        let pipe = Pipe()
+        let sentinel = Process()
+        sentinel.executableURL = URL(fileURLWithPath: "/bin/cat")
+        sentinel.standardInput = pipe
+        sentinel.standardOutput = FileHandle.nullDevice
+        try sentinel.run()
+        let session = MenuSession(pid: sentinel.processIdentifier, id: UUID())
+        XCTAssertFalse(session.stopped)
+        try pipe.fileHandleForWriting.close()
+        sentinel.waitUntilExit()
+        XCTAssertTrue(session.stopped)
+    }
+
     private func withSession(_ body: (Session, MockSettings) throws -> Void) throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: folder) }

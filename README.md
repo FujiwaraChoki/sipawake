@@ -2,7 +2,15 @@
 
 Keep your Mac awake with the lid closed for a timed session while using Low Power Mode and a dimmer display.
 
-## Build and run
+## Install the menu bar app
+
+1. Download the signed and notarized DMG from [GitHub Releases](https://github.com/FujiwaraChoki/sipawake/releases/latest).
+2. Open it, drag **SipAwake** into **Applications**, then launch it.
+3. Click the coffee cup in the menu bar, pick a duration, and approve the macOS administrator prompt. Close the lid once the menu says **Awake**.
+
+Choose **End Session** to restore settings early. Use **Restore Saved Settings** after an interrupted cleanup. The Universal app supports Apple silicon and Intel Macs running macOS 13 or later. It uses the same session engine and default battery settings as the CLI.
+
+## Build and run the CLI
 
 You need macOS 13 or later and Xcode or the Xcode Command Line Tools with Swift 5.9 or later.
 
@@ -42,6 +50,16 @@ sudo .build/release/sipawake restore
 ```
 
 If an existing system-wide sleep override was set outside SipAwake and you want to clear it, run `sudo pmset -a disablesleep 0`.
+
+The DMG also includes the signed CLI. After moving the app into Applications, you can run it directly.
+
+```sh
+sudo /Applications/SipAwake.app/Contents/Helpers/sipawake --for 2h
+```
+
+## Development
+
+Use `./script/build_and_run.sh --verify` to build and launch a local menu bar app. To prepare a release DMG, set `SIPAWAKE_SIGN_IDENTITY` to a Developer ID Application identity and `SIPAWAKE_NOTARY_PROFILE` to an existing `notarytool` keychain profile, then run `./script/release-dmg.sh 0.2.0 /absolute/path/to/output`.
 
 ## Tests
 
